@@ -39,32 +39,34 @@ class PCGrad():
         - objectives: a list of objectives
         '''
 
-        grads, shapes, has_grads = self._pack_grad(objectives)
+        grads, shapes, has_grads = self._pack_grad(objectives)  # 将多个loss对应的各自的梯度(所有参数)存成一个list，grads::list length == #losses
         pc_grad = self._project_conflicting(grads, has_grads)
-        pc_grad = self._unflatten_grad(pc_grad, shapes[0])
+        pc_grad = self._unflatten_grad(pc_grad, shapes[0]) # 这里将合并的梯度还原到对应每个参数的样子
         self._set_grad(pc_grad)
         return
 
     def _project_conflicting(self, grads, has_grads, shapes=None):
-        shared = torch.stack(has_grads).prod(0).bool()
+        shared = torch.stack(has_grads).prod(0).bool()  # 将两个梯度的mask堆在一起，相同的维度乘起来，有共享梯度的地方是1，没有共享梯度的地方是0，转为bool
         pc_grad, num_task = copy.deepcopy(grads), len(grads)
-        for g_i in pc_grad:
+        for g_i in pc_grad: # 将each 梯度投影到对方的法平面上，比如g1，g2，g1的梯度最终是投影到g2法平面上的，g2的梯度最终是投影到g1法平面上的
             random.shuffle(grads)
             for g_j in grads:
                 g_i_g_j = torch.dot(g_i, g_j)
                 if g_i_g_j < 0:
-                    g_i -= (g_i_g_j) * g_j / (g_j.norm()**2)
+                    g_i -= (g_i_g_j) * g_j / (g_j.norm()**2)        # 当gi与gj的夹角的余弦为负值时，将gi投影到gj的发面上
+        
+        # 将所有投影过的梯度合并为1个向量
         merged_grad = torch.zeros_like(grads[0]).to(grads[0].device)
         if self._reduction:
             merged_grad[shared] = torch.stack([g[shared]
-                                           for g in pc_grad]).mean(dim=0)
+                                           for g in pc_grad]).mean(dim=0)   # 将互相投影过的梯度求个平均，融合为同一个梯度
         elif self._reduction == 'sum':
             merged_grad[shared] = torch.stack([g[shared]
                                            for g in pc_grad]).sum(dim=0)
         else: exit('invalid reduction method')
 
         merged_grad[~shared] = torch.stack([g[~shared]
-                                            for g in pc_grad]).sum(dim=0)
+                                            for g in pc_grad]).sum(dim=0)   # 非共享的剩余的梯度加起来
         return merged_grad
 
     def _set_grad(self, grads):
@@ -133,9 +135,9 @@ class PCGrad():
                     grad.append(torch.zeros_like(p).to(p.device))
                     has_grad.append(torch.zeros_like(p).to(p.device))
                     continue
-                shape.append(p.grad.shape)
-                grad.append(p.grad.clone())
-                has_grad.append(torch.ones_like(p).to(p.device))
+                shape.append(p.grad.shape)      # 参数组梯度grad的shape
+                grad.append(p.grad.clone())     # 参数组梯度grad的复制
+                has_grad.append(torch.ones_like(p).to(p.device))    # 参数组梯度grad相同size的全为1的tensor = mask
         return grad, shape, has_grad
 
 
@@ -187,7 +189,7 @@ if __name__ == '__main__':
     pc_adam.zero_grad()
     loss1_fn, loss2_fn = nn.MSELoss(), nn.MSELoss()
     loss1, loss2 = loss1_fn(y_pred_1, y), loss2_fn(y_pred_2, y)
-
+    pdb.set_trace()
     pc_adam.pc_backward([loss1, loss2])
     for p in net.parameters():
         print(p.grad)
