@@ -189,7 +189,6 @@ if __name__ == '__main__':
     pc_adam.zero_grad()
     loss1_fn, loss2_fn = nn.MSELoss(), nn.MSELoss()
     loss1, loss2 = loss1_fn(y_pred_1, y), loss2_fn(y_pred_2, y)
-    pdb.set_trace()
     pc_adam.pc_backward([loss1, loss2])
     for p in net.parameters():
         print(p.grad)
